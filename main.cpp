@@ -2,9 +2,16 @@
 using namespace std;
 #include <bitset>
 #include <string>
+#include <chrono>
+#include <vector>
 
-uint64_t corner_position = 0b00111'00110'00101'00100'00011'00010'00001'00000;
-uint64_t edge_position = 0b01011'01010'01001'01000'00111'00110'00101'00100'00011'00010'00001'00000;
+
+uint64_t SOLVED_CORNER = 0b00111'00110'00101'00100'00011'00010'00001'00000;
+uint64_t SOLVED_EDGE = 0b01011'01010'01001'01000'00111'00110'00101'00100'00011'00010'00001'00000;
+
+uint64_t corner_position = SOLVED_CORNER;
+uint64_t edge_position = SOLVED_EDGE;
+
 
 char face[6] = {'U', 'F', 'R', 'D', 'B', 'L'};
 
@@ -14,15 +21,97 @@ int (*face1[6])[8][2] = {U, F, R, D, B, L};
 uint64_t masks[6][2];
 uint64_t c_masks[6][2];
 
-uint64_t turn_edge(const int p0[2], const int p1[2], const int p2[2], const int p3[2], uint64_t mask){
-  uint8_t m = 31;
-  uint64_t v0 = ((edge_position >> p0[0]) & m) << p0[1];
-  uint64_t v1 = ((edge_position >> p1[0]) & m) << p1[1];
-  uint64_t v2 = ((edge_position >> p2[0]) & m) << p2[1];
-  uint64_t v3 = ((edge_position >> p3[0]) & m) << p3[1];
+uint64_t turn_piece(uint64_t pos, int p0[2], int p1[2], int p2[2], int p3[2], uint64_t mask);
+void turn(int move, int index, uint64_t* corner, uint64_t* edge);
+void turn_string(string move);
+void tables();
+void go_depth(int depth, int max_depth, uint64_t corner_search_pos, uint64_t edge_search_pos, int start);
+void search(int max_depth, uint64_t corner_search_pos, uint64_t edge_search_pos);
+void check_position(uint64_t corner_pos, uint64_t edge_pos, int move_num);
+
+
+int counter = 0;
+int max_solved_pieces = 0;
+bool solved = false;
+vector<int> path;
+vector<int> stored_path;
+
+
+int main(){
+  tables();
+  auto start = chrono::steady_clock::now();
+
+  search(6, corner_position, edge_position);
+
   
-  return((edge_position & mask) | v0 | v1 | v2 | v3);
+
+  auto end = chrono::steady_clock::now();
+
+  chrono::duration<double> elapsed = end - start;
+  cout << "Time: " << elapsed.count() << " seconds\n";
+
+
+  cout << counter;
+  return 0;
 }
+
+
+
+
+
+void go_depth(int depth, int max_depth, uint64_t corner_search_pos, uint64_t edge_search_pos, int start){
+  uint64_t corner_search_pos_copy = corner_search_pos;
+  uint64_t edge_search_pos_copy = edge_search_pos;
+  check_position(corner_search_pos_copy, edge_search_pos_copy, start + depth);
+  if(depth < max_depth){
+    for(int move = 0; move < 6; move++){
+      for(int index = 0; index < 3; index++){
+        if(!solved){
+          counter += 1;
+          path[start + depth] = move * 3 + index;
+          corner_search_pos_copy = corner_search_pos;
+          edge_search_pos_copy = edge_search_pos;
+          turn(move, index, &corner_search_pos_copy, &edge_search_pos_copy);
+          go_depth(depth+1, max_depth, corner_search_pos_copy, edge_search_pos_copy, start);
+      }
+      }
+    }
+  }
+}
+
+void search(int max_depth, uint64_t corner_search_pos, uint64_t edge_search_pos){
+  path = stored_path;
+  int start = path.size();
+  path.resize(start + max_depth);
+  go_depth(0, max_depth, corner_search_pos, edge_search_pos, start);
+}
+
+
+
+void check_position(uint64_t corner_pos, uint64_t edge_pos, int move_num){
+  uint64_t c_mask = 0b00001'00001'00001'00001'00001'00001'00001'00001;
+  uint64_t e_mask = 0b00001'00001'00001'00001'00001'00001'00001'00001'00001'00001'00001'00001;
+  uint64_t c_difference = corner_pos ^ SOLVED_CORNER;
+  uint64_t e_difference = edge_pos ^ SOLVED_EDGE;
+  uint64_t c_combined =  c_difference | (c_difference >> 1) | (c_difference >> 2) | (c_difference >> 3) | (c_difference >> 4);
+  uint64_t e_combined =  e_difference | (e_difference >> 1) | (e_difference >> 2) | (e_difference >> 3) | (e_difference >> 4);
+  int solved_pieces = __popcnt64((~c_combined) & c_mask) + __popcnt64((~e_combined) & e_mask);
+  if(solved_pieces > max_solved_pieces){
+    max_solved_pieces = solved_pieces;
+    stored_path.assign(
+    path.begin(),
+    path.begin() + move_num
+);
+  }
+  if(solved_pieces == 20){
+    cout << "cube solved\n";
+    solved = true;
+  }
+  counter += 1;
+}
+
+
+
 
 uint64_t turn_piece(uint64_t pos, int p0[2], int p1[2], int p2[2], int p3[2], uint64_t mask){
   uint8_t m = 31;
@@ -34,36 +123,36 @@ uint64_t turn_piece(uint64_t pos, int p0[2], int p1[2], int p2[2], int p3[2], ui
   return((pos & mask) | V[0] | V[1] | V[2] | V[3]);
 }
 
-void turn(int move, int index){     
+void turn(int move, int index, uint64_t* corner, uint64_t* edge){  
   uint64_t mask_F = 0b000000000000000100000000000000100001000000000000000000010000; // move 0 = U, 1 = F, 2 = R, 3 = D, 4 = B, 5 = L
   uint64_t mask_B = 0b000001000000000000001000010000000000000000000100000000000000; // index 0 = counterclockwise, 1 = clockwise, 2 = 180
    auto [c0, c1, c2, c3, e0, e1, e2, e3] = face1[move][index];     
-  corner_position = turn_piece(corner_position, c0, c1, c2, c3, masks[move][0]);
-  edge_position = turn_piece(edge_position, e0, e1, e2, e3, masks[move][1]);
+  *corner = turn_piece(*corner, c0, c1, c2, c3, masks[move][0]);
+  *edge = turn_piece(*edge, e0, e1, e2, e3, masks[move][1]);
 
   if (index != 2) {
-    if (move == 1) edge_position ^= mask_F;
-    else if (move == 4) edge_position ^= mask_B;
+    if (move == 1) *edge ^= mask_F;
+    else if (move == 4) *edge ^= mask_B;
     uint64_t low_mask  = c_masks[move][0];
     uint64_t high_mask = c_masks[move][1];
     switch (move % 3) {
       case 0: { 
-        uint64_t low_bits  = corner_position & low_mask;
-        uint64_t high_bits = corner_position & high_mask;
+        uint64_t low_bits  = *corner & low_mask;
+        uint64_t high_bits = *corner & high_mask;
 
-        corner_position =
-            (corner_position & ~(low_mask | high_mask))
+        *corner =
+            (*corner & ~(low_mask | high_mask))
             | (low_bits << 1)
             | (high_bits >> 1);
         break;
       }
 
       case 1: 
-        corner_position ^= (~corner_position & low_mask) << 1;
+        *corner ^= (~*corner & low_mask) << 1;
         break;
 
       case 2: 
-        corner_position ^= (~corner_position & high_mask) >> 1;
+        *corner ^= (~*corner & high_mask) >> 1;
         break;
     }     
   } 
@@ -104,7 +193,7 @@ void turn_string(string move){
       index = 1;
       break;
   }
-  turn(m, index);
+  turn(m, index, &corner_position, &edge_position);
 }
 
 void tables(){
@@ -151,13 +240,3 @@ void tables(){
     masks[i][1] = mask_e;
     }
   }
-
-int main(){
-  tables();
-  cout << bitset<60>(edge_position) << "\n" << bitset<40>(corner_position) << "\n";
-  turn(0, 1);
-  cout << bitset<60>(edge_position) << "\n" << bitset<40>(corner_position) << "\n";
-
-
-  return 0;
-}
